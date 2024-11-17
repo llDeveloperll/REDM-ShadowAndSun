@@ -79,15 +79,13 @@ VisualDebug = {
             Hit: %s
             Entity: %s
             Time: %02d:%02d
-            Ray Handle: %s
         ]], 
             Debug.formatVector(data.sunPos),
             Debug.formatVector(data.playerPos),
             tostring(data.hit),
             tostring(data.entity),
             data.gameHours,
-            data.gameMinutes,
-            tostring(data.rayHandle)
+            data.gameMinutes
         )
 
         VisualDebug.drawText(
@@ -210,7 +208,6 @@ local function MainLoop()
                     entity = playerPed,
                     gameHours = hours,
                     gameMinutes = minutes,
-                    rayHandle = nil
                 }
                 
                 -- Visual debugging
