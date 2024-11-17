@@ -71,9 +71,18 @@ This script is intentionally simple to encourage modification and experimentatio
 
 ---
 
+
 ## **Important Notes**
 
-- **This is a demonstration script.** It is not intended for production use as-is. Performance optimizations and enhancements are necessary for larger environments or complex use cases.  
+- **This is a demonstration script.** It is not intended for production use as-is. Performance optimizations and enhancements are necessary for larger environments or complex use cases.
+
+- **Special thanks to:**
+**Kad MxWay**, for suggesting the use of the **`HasEntityClearLosToCoord`** function instead of raycasting. This recommendation significantly improved the shadow detection and performance in this version of the script. You can explore his work and contributions at [Jump-On Studios](https://github.com/Jump-On-Studios).
+
+- **JulianLegler** for providing valuable ideas during the project's discussion on GitHub, which helped refine its development. You can explore his repositories and contributions on his [GitHub profile](https://github.com/JulianLegler?tab=repositories).
+
+- **Acknowledgments to Leon** for offering helpful implementation tips that greatly influenced the final structure of this script. Check out his contributions and projects at [RedM Romania](https://redmromania.com/index.html).
+
 - The script is written for **free and open use by the community**. Feel free to modify it to suit your project needs.
 
 ---
