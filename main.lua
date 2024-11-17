@@ -92,25 +92,63 @@ function ShadowAndSunBuildingsHitChecker()
 
         local retval, hit, endCoords, surfaceNormal, entity = GetShapeTestResult(rayHandle)
 
-        
+        -- Example of what the raycast results may return:
+        -- hit (number): True (1) if the ray hits an object, false (0) otherwise.
+        -- endCoords (vector3): The point where the ray hits the object (or where it ends if no hit occurs).
+        -- surfaceNormal (vector3): The surface normal at the point of impact.
+        -- entity (entity): The ID of the entity that was hit, or 0 if no entity was hit.
 
-        -- Debug mode
+        -- Example Outputs:
+        -- 1. If 'hit' is true:
+        --    hit = 1
+        --    endCoords = vector3(100.0, 200.0, 300.0)
+        --    surfaceNormal = vector3(0.0, 0.0, 1.0)
+        --    entity = 1234 (entity ID of a building or object)
+        --
+        -- 2. If 'hit' is false:
+        --    hit = 0
+        --    endCoords = vector3(150.0, 250.0, 350.0) (where the ray ends in empty space)
+        --    surfaceNormal = vector3(0.0, 0.0, 0.0)
+        --    entity = 0
+
+        -- Actions based on results
+        if hit then
+            -- Example: Print debug info about what was hit
+            print("Ray hit an object!")
+            print(string.format("Hit Position: %s", endCoords))
+            print(string.format("Surface Normal: %s", surfaceNormal))
+            print(string.format("Entity ID: %s", entity))
+
+            print("Player is in shadow. Shadow caused by entity ID: " .. entity)
+            -- Add your logic here (e.g., reduce stats, play effects, etc.)
+        else
+            -- Example: Indicate the player is in direct sunlight
+            print("No obstruction detected. Player is in sunlight.")
+            print("Player is in sunlight.")
+            -- Add your logic here (e.g., boost stats, trigger effects, etc.)
+        end
+
+        -- Example: Visual feedback in debug mode
         if Config.debugmode then
-            print(string.format(
-                "Debug mode: ON,\r\n RayHandle: %s,\r\n Player pos: %s,\r\n Sun pos: %s",
-                rayHandle, adjustedPlayerPos, absoluteSunPos
-            ))
-            print("RayHandle Status", retval, hit, endCoords, surfaceNormal, entity)
+            -- If hit, draw a red line to the hit point
+            if hit then
+                DrawDebugLine(
+                    adjustedPlayerPos,  -- Start position
+                    endCoords,          -- End position (hit point)
+                    255, 0, 0, 255      -- Red line (RGBA)
+                )
+            else
+                -- If no hit, draw a green line to the ray's endpoint
+                DrawDebugLine(
+                    adjustedPlayerPos,  -- Start position
+                    absoluteSunPos,     -- End position (ray's endpoint)
+                    0, 255, 0, 255      -- Green line (RGBA)
+                )
+            end
 
-            -- Draw the raycast line
-            DrawDebugLine(
-                adjustedPlayerPos,
-                absoluteSunPos,
-                255, -- R
-                255, -- G
-                0,   -- B
-                255  -- A
-            )
+            -- Display a text box indicating the current state
+            local debugText = hit and "In Shadow" or "In Sunlight"
+            DrawTextOnScreen(debugText, 0.5, 0.5)
 
             -- Display debug information on-screen
             DrawTextOnScreen(
