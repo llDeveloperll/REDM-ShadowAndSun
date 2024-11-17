@@ -1,178 +1,245 @@
--- Configuration table
-local Config = {}
-Config.debugmode = false -- Set to true to enable debug mode for visual and textual output
+--[[
+    Enhanced Sun and Shadow Detection Script
+    Version: 2.0.0
+    Author: Original code enhanced by Vilão.dev
+    License: MIT
+    
+    This script provides advanced sun position calculation and shadow detection
+    with extensive debugging capabilities and performance optimizations.
+]]
 
---- Draws a debug line in the game world for visualization.
--- @param startCoords table: Starting coordinates (vector3 format)
--- @param endCoords table: Ending coordinates (vector3 format)
--- @param r number: Red color value (default: 255)
--- @param g number: Green color value (default: 255)
--- @param b number: Blue color value (default: 0)
--- @param a number: Alpha value (transparency, default: 255)
-function DrawDebugLine(startCoords, endCoords, r, g, b, a)
-    r = r or 255
-    g = g or 255
-    b = b or 0
-    a = a or 255
+local Config, Debug, VisualDebug, SunCalculator, ShadowDetector;
 
-    -- Draw the line in the game world
-    DrawLine(
-        startCoords.x, startCoords.y, startCoords.z,
-        endCoords.x, endCoords.y, endCoords.z,
-        r, g, b, a
-    )
-end
-
---- Draws text on the screen.
--- @param text string: Text to display
--- @param xPos number: X position on the screen
--- @param yPos number: Y position on the screen
-function DrawTextOnScreen(text, xPos, yPos)
-    SetTextScale(0.35, 0.35) -- Sets the text size
-    SetTextColor(255, 255, 255, 255) -- White color
-    SetTextDropshadow(3, 0, 0, 0, 255) -- Adds a shadow to the text
-    -- Display the text
-    BgDisplayText(
-        text, 
-        xPos, 
-        yPos
-    )
-end
-
---- Calculates the sun's position based on the in-game time.
--- @return table: A vector3-like table representing the sun's direction relative to the player
-function CalculateSunPosition()
-    local currentTime = GetClockHours() + (GetClockMinutes() / 60.0) -- Calculates the fractional hour
-    local isDaytime = currentTime >= 6.0 and currentTime <= 20.0 -- Daytime is between 6 AM and 8 PM
-
-    local progress
-    if isDaytime then
-        progress = (currentTime - 6.0) / 14.0 -- Progress of the sun during the day
-    else
-        if currentTime < 6.0 then
-            progress = (currentTime + 4.0) / 10.0 -- Nighttime progression (before midnight)
-        else
-            progress = (currentTime - 20.0) / 10.0 -- Nighttime progression (after midnight)
-        end
-    end
-
-    local z = (46.5 * math.sin(progress * math.pi)) -- Vertical position of the sun
-    return {
-        x = 60.0 * math.cos(progress * math.pi),
-        y = -60.0 * math.sin(progress * math.pi) * 0.53,
-        z = isDaytime and z or -math.abs(z) -- Negative Z for the moon
+-- Configuration and constants
+Config = {
+    debugMode = true,           -- Enable visual debugging and logging
+    checkInterval = 1,        -- How often to check shadow status (ms)
+    dayTimeStart = 6.0,         -- When day begins (24hr format)
+    dayTimeEnd = 20.0,          -- When day ends (24hr format)
+    sunDistance = 60.0,         -- Distance multiplier for sun position
+    debugTextScale = 0.35,      -- Scale of debug text
+    debugColors = {
+        inShadow = {255, 0, 0, 255},    -- Red
+        inSunlight = {0, 255, 0, 255},  -- Green
+        text = {255, 255, 255, 255}     -- White
     }
-end
+}
 
---- Main loop to check for shadow status using raycasting.
-function ShadowAndSunBuildingsHitChecker()
-    while true do
-        Wait(0) -- Prevents the game from freezing due to infinite loop
+-- Debug utilities
+Debug = {
+    ---Logs a message if debug mode is enabled
+    ---@param message string The message to log
+    ---@param ... any Additional values to print
+    log = function(message, ...)
+        if Config.debugMode then
+            print(string.format("[SunShadow] " .. message, ...))
+        end
+    end,
 
-        local playerPos = GetEntityCoords(PlayerPedId()) -- Gets the player's current position
-        local sunPos = CalculateSunPosition() -- Calculates the sun's relative position
+    ---Creates a formatted string of a vector3-like table
+    ---@param vec table Table with x, y, z components
+    ---@return string
+    formatVector = function(vec)
+        return string.format("(%.2f, %.2f, %.2f)", vec.x, vec.y, vec.z)
+    end
+}
 
-        local adjustedPlayerPos = vector3(playerPos.x, playerPos.y, playerPos.z + 0.8) -- Adjusts player position for head height
+-- Visual debugging utilities
+VisualDebug = {
+    ---Draws a debug line in the game world
+    ---@param startCoords table Starting coordinates (vector3 format)
+    ---@param endCoords table Ending coordinates (vector3 format)
+    ---@param color table Table containing {r, g, b, a} values
+    drawLine = function(startCoords, endCoords, color)
+        DrawLine(
+            startCoords.x, startCoords.y, startCoords.z,
+            endCoords.x, endCoords.y, endCoords.z,
+            color[1], color[2], color[3], color[4]
+        )
+    end,
 
-        -- Calculate the absolute position of the sun in the world
-        local absoluteSunPos = {
-            x = adjustedPlayerPos.x + sunPos.x,
-            y = adjustedPlayerPos.y + sunPos.y,
-            z = adjustedPlayerPos.z + sunPos.z
-        }
+    ---Draws text on the screen with enhanced visibility
+    ---@param text string Text to display
+    ---@param position table Table containing x, y screen coordinates
+    ---@param color table Table containing {r, g, b, a} values
+    drawText = function(text, position, color)
+        SetTextScale(Config.debugTextScale, Config.debugTextScale)
+        SetTextColor(color[1], color[2], color[3], color[4])
+        SetTextDropshadow(3, 0, 0, 0, 255)
+        BgDisplayText(text, position.x, position.y)
+    end,
 
-        -- Perform a raycast to check for obstructions
-        local rayHandle = StartExpensiveSynchronousShapeTestLosProbe(
-            adjustedPlayerPos.x, adjustedPlayerPos.y, adjustedPlayerPos.z,
-            absoluteSunPos.x, absoluteSunPos.y, absoluteSunPos.z,
-            -1, -- Trace everything
-            PlayerPedId(), -- Ignore the player's entity
-            4
+    ---Displays comprehensive debug information
+    ---@param data table Debug data to display
+    displayDebugInfo = function(data)
+        local debugText = string.format([[
+            Sun Status:
+            Position: %s
+            Player Pos: %s
+            Hit: %s
+            Entity: %s
+            Time: %02d:%02d
+            Ray Handle: %s
+        ]], 
+            Debug.formatVector(data.sunPos),
+            Debug.formatVector(data.playerPos),
+            tostring(data.hit),
+            tostring(data.entity),
+            data.gameHours,
+            data.gameMinutes,
+            tostring(data.rayHandle)
         )
 
-        local retval, hit, endCoords, surfaceNormal, entity = GetShapeTestResult(rayHandle)
+        VisualDebug.drawText(
+            debugText,
+            {x = 0.05, y = 0.45},
+            Config.debugColors.text
+        )
+    end
+}
 
-        -- Example of what the raycast results may return:
-        -- hit (number): True (1) if the ray hits an object, false (0) otherwise.
-        -- endCoords (vector3): The point where the ray hits the object (or where it ends if no hit occurs).
-        -- surfaceNormal (vector3): The surface normal at the point of impact.
-        -- entity (entity): The ID of the entity that was hit, or 0 if no entity was hit.
+-- Core functionality
+SunCalculator = {
+    ---Calculates the current game time as fractional hours
+    ---@return number hours, number minutes
+    getCurrentTime = function()
+        local hours = GetClockHours()
+        local minutes = GetClockMinutes()
+        return hours, minutes, hours + (minutes / 60.0)
+    end,
 
-        -- Example Outputs:
-        -- 1. If 'hit' is true:
-        --    hit = 1
-        --    endCoords = vector3(100.0, 200.0, 300.0)
-        --    surfaceNormal = vector3(0.0, 0.0, 1.0)
-        --    entity = 1234 (entity ID of a building or object)
-        --
-        -- 2. If 'hit' is false:
-        --    hit = 0
-        --    endCoords = vector3(150.0, 250.0, 350.0) (where the ray ends in empty space)
-        --    surfaceNormal = vector3(0.0, 0.0, 0.0)
-        --    entity = 0
+    ---Determines if it's currently daytime
+    ---@param currentTime number The current time in fractional hours
+    ---@return boolean
+    isDaytime = function(currentTime)
+        return currentTime >= Config.dayTimeStart and currentTime <= Config.dayTimeEnd
+    end,
 
-        -- Actions based on results
-        if hit then
-            -- Example: Print debug info about what was hit
-            print("Ray hit an object!")
-            print(string.format("Hit Position: %s", endCoords))
-            print(string.format("Surface Normal: %s", surfaceNormal))
-            print(string.format("Entity ID: %s", entity))
-
-            print("Player is in shadow. Shadow caused by entity ID: " .. entity)
-            -- Add your logic here (e.g., reduce stats, play effects, etc.)
+    ---Calculates sun position based on game time
+    ---@return table Vector3-like table representing sun direction
+    calculateSunPosition = function()
+        local hours, minutes, currentTime = SunCalculator.getCurrentTime()
+        local isDaytime = SunCalculator.isDaytime(currentTime)
+        
+        -- Calculate progress through day/night cycle
+        local progress
+        if isDaytime then
+            progress = (currentTime - Config.dayTimeStart) / (Config.dayTimeEnd - Config.dayTimeStart)
         else
-            -- Example: Indicate the player is in direct sunlight
-            print("No obstruction detected. Player is in sunlight.")
-            print("Player is in sunlight.")
-            -- Add your logic here (e.g., boost stats, trigger effects, etc.)
-        end
-
-        -- Example: Visual feedback in debug mode
-        if Config.debugmode then
-            -- If hit, draw a red line to the hit point
-            if hit then
-                DrawDebugLine(
-                    adjustedPlayerPos,  -- Start position
-                    endCoords,          -- End position (hit point)
-                    255, 0, 0, 255      -- Red line (RGBA)
-                )
+            if currentTime < Config.dayTimeStart then
+                progress = (currentTime + (24 - Config.dayTimeEnd)) / (24 - (Config.dayTimeEnd - Config.dayTimeStart))
             else
-                -- If no hit, draw a green line to the ray's endpoint
-                DrawDebugLine(
-                    adjustedPlayerPos,  -- Start position
-                    absoluteSunPos,     -- End position (ray's endpoint)
-                    0, 255, 0, 255      -- Green line (RGBA)
-                )
+                progress = (currentTime - Config.dayTimeEnd) / (24 - (Config.dayTimeEnd - Config.dayTimeStart))
             end
-
-            -- Display a text box indicating the current state
-            local debugText = hit and "In Shadow" or "In Sunlight"
-            DrawTextOnScreen(debugText, 0.5, 0.5)
-
-            -- Display debug information on-screen
-            DrawTextOnScreen(
-                ('SUN STATUS: \n' ..
-                'Sun Direction: %s\n' ..
-                'retval: %s,\n' ..
-                'hit: %s,\n' ..
-                'endCoords: %s,\n' ..
-                'surfaceNormal: %s,\n' ..
-                'entity: %s,\n' ..
-                'rayHandle %s'):format(
-                    vector3(absoluteSunPos.x, absoluteSunPos.y, absoluteSunPos.z),
-                    retval,
-                    hit,
-                    endCoords,
-                    surfaceNormal,
-                    entity,
-                    rayHandle
-                ),
-                0.05, 0.45
-            )
         end
+
+        -- Calculate vertical position
+        local verticalPosition = 46.5 * math.sin(progress * math.pi)
+        
+        return {
+            x = Config.sunDistance * math.cos(progress * math.pi),
+            y = -Config.sunDistance * math.sin(progress * math.pi) * 0.53,
+            z = isDaytime and verticalPosition or -math.abs(verticalPosition)
+        }
+    end
+}
+
+ShadowDetector = {
+    ---Gets adjusted coordinates for sun position relative to an entity
+    ---@param entity number Entity ID
+    ---@param sunCoords table Relative sun position
+    ---@return table absoluteSunPos, table entityPos
+    getEntitySunLineOfSight = function(entity, sunCoords)
+        local entityPos = GetEntityCoords(entity)
+        
+        local adjustedEntityPos = {
+            x = entityPos.x,
+            y = entityPos.y,
+            z = entityPos.z + GetEntityHeight(entity, entityPos.x, entityPos.y, entityPos.z, true)
+        }
+        
+        local absoluteSunPos = {
+            x = adjustedEntityPos.x + sunCoords.x,
+            y = adjustedEntityPos.y + sunCoords.y,
+            z = adjustedEntityPos.z + sunCoords.z
+        }
+        
+        return absoluteSunPos, adjustedEntityPos
+    end,
+
+    ---Checks if an entity has clear line of sight to the sun
+    ---@param entity number Entity ID
+    ---@param sunPos table Absolute sun position
+    ---@return boolean
+    checkEntitySunlight = function(entity, sunPos)
+        return HasEntityClearLosToCoord(
+            entity,
+            sunPos.x,
+            sunPos.y,
+            sunPos.z,
+            1
+        ) == 1 and true or false
+    end
+}
+
+-- Main loop
+local function MainLoop()
+    local lastCheck = 0
+    
+    while true do
+        local currentTime = GetGameTimer()
+        
+        -- Only check at specified intervals
+        if currentTime - lastCheck >= Config.checkInterval then
+            lastCheck = currentTime
+            
+            local sunPos = SunCalculator.calculateSunPosition()
+            local playerPed = PlayerPedId()
+            local absoluteSunPos, playerPos = ShadowDetector.getEntitySunLineOfSight(playerPed, sunPos)
+            
+            local isInSunlight = ShadowDetector.checkEntitySunlight(playerPed, absoluteSunPos)
+            
+            -- Debug visualization and logging
+            if Config.debugMode then
+                local hours, minutes = SunCalculator.getCurrentTime()
+                
+                local debugData = {
+                    sunPos = absoluteSunPos,
+                    playerPos = playerPos,
+                    hit = not isInSunlight,
+                    entity = playerPed,
+                    gameHours = hours,
+                    gameMinutes = minutes,
+                    rayHandle = nil
+                }
+                
+                -- Visual debugging
+                VisualDebug.drawLine(
+                    playerPos,
+                    absoluteSunPos,
+                    isInSunlight and Config.debugColors.inSunlight or Config.debugColors.inShadow
+                )
+                
+                VisualDebug.displayDebugInfo(debugData)
+                
+                Debug.log("Shadow State: %s", isInSunlight and "In Sunlight" or "In Shadow")
+            end
+            
+            -- Add your gameplay logic here based on isInSunlight
+            -- Example: TriggerEvent('sunShadow:statusChanged', isInSunlight)
+        end
+        
+        Wait(0)
     end
 end
 
--- Start the shadow checker loop
-ShadowAndSunBuildingsHitChecker()
+-- Start the main loop
+Citizen.CreateThread(MainLoop)
+
+-- Export functions for external use
+exports('getSunPosition', SunCalculator.calculateSunPosition)
+exports('isInSunlight', function(entity)
+    local sunPos = SunCalculator.calculateSunPosition()
+    local absoluteSunPos = ShadowDetector.getEntitySunLineOfSight(entity or PlayerPedId(), sunPos)
+    return ShadowDetector.checkEntitySunlight(entity or PlayerPedId(), absoluteSunPos)
+end)
